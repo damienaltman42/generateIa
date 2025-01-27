@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-container
+    ports:
+      - "3306:3306" # Mappe le port 3306 de l'hôte vers le conteneur
+    environment:
+      MYSQL_ROOT_PASSWORD: "root" # Mot de passe pour l'utilisateur root
+      MYSQL_DATABASE: "ai_marketing" # Nom de la base
+      MYSQL_USER: "ai_user" # Nom d'utilisateur personnalisé
+      MYSQL_PASSWORD: "ai_password" # Mot de passe pour cet utilisateur
+    volumes:
+      - mysql_data:/var/lib/mysql # Volume pour persister les données
+    restart: always # Redémarre automatiquement en cas de problème
+
+volumes:
+  mysql_data:

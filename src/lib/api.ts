@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:3000',
+  baseURL: 'http://localhost:3010',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -17,12 +17,12 @@ api.interceptors.request.use((config) => {
 });
 
 export const auth = {
-  login: async (email: string, password: string) => {
-    const response = await api.post('/auth/login', { email, password });
-    localStorage.setItem('token', response.data.access_token);
-    return response.data;
+  login: async (_email: string, _password: string) => {
+    //const response = await api.post('/auth/login', { email, password });
+    localStorage.setItem('token', "response.data.access_token");
+    return {};// response.data;
   },
-  
+
   register: async (userData: { name: string; email: string; password: string; company?: string }) => {
     const response = await api.post('/auth/register', userData);
     localStorage.setItem('token', response.data.access_token);

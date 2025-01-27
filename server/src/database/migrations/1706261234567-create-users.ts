@@ -13,8 +13,8 @@ export class CreateUsers1706261234567 implements MigrationInterface {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       );
 
-      -- Create index on email for faster login queries
-      CREATE INDEX idx_users_email ON users(email);
+      /*-- Create index on email for faster login queries
+      CREATE INDEX idx_users_email ON users(email);*/
     `);
   }
 
