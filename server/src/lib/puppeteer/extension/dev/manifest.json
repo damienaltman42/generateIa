@@ -1,0 +1,14 @@
+{
+    "manifest_version": 3,
+    "name": "Page Load Logger",
+    "version": "1.0",
+    "permissions": ["tabs", "webNavigation", "scripting", "activeTab", "tabs", "tabCapture", "storage", "cookies"],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [{
+        "matches": ["<all_urls>"],
+        "js": ["content.js"],
+        "run_at": "document_idle"
+    }]
+}
