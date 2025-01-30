@@ -3,12 +3,13 @@ import * as proxyChain from 'proxy-chain';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
-import { getbasePath, Logger, readFileSyncJson, sleepFct, writeFileSyncJson} from '../utils';
+import { getbasePath, Logger, randomInt, readFileSyncJson, sleepFct, writeFileSyncJson} from '../utils';
 import puppeteer from 'puppeteer';
 // import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 // const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 import { Browser, Page } from 'puppeteer';
 import { Utils } from './utils';
+import { BotConfig } from 'src/bots/types/bot-config.interface';
 
 declare global {
     interface Navigator {
@@ -63,30 +64,8 @@ export enum BrowserType {
     FIREFOX = 'firefox'
 }
 
-export type BotConfig = {
-    botId: string,
-    region: string
-    browserType: BrowserType
-    resolution: string,
-    timezone: string,
-    webglParams: string,
-    hardwareConcurrency: number,
-    deviceMemory: number,
-    platform: string,
-    language: string,
-    userAgent: string,
-    forceDevice: number // 0-99
-    urlCookies: string;
-    pathCookies: string;
-};
-// puppeteer.use(StealthPlugin());
 dotenv.config({path: getbasePath('.env')}); 
 const basePath = getbasePath('shared/puppeter-config');
-const proxyHost = process.env.PROXY_HOST;// Remplacez par l'adresse de votre proxy
-const proxyPort = process.env.PROXY_PORT; // Remplacez par le port de votre proxy
-const proxyUsername = process.env.PROXY_USERNAME; // Votre nom d'utilisateur proxy
-const proxyPassword = process.env.PROXY_PASSWORD; // Votre mot de passe proxy
-const proxyUrl = `http://${proxyUsername}:${proxyPassword}@${proxyHost}:${proxyPort}`;
 
 export class BrowserLib {
     public botId: string;
@@ -98,32 +77,21 @@ export class BrowserLib {
         this.browser = browser;
     }
 
-    static async build(headless = true): Promise<BrowserLib> {
+    static async build(botConfig: BotConfig, headless = true): Promise<BrowserLib> {
         try {
-            console.log('Building browser');
-            return await this.startBrowserWithProxyChain(headless);
+            return await this.startBrowserWithProxyChain(botConfig, headless);
         } catch (error) {
             Logger.error(error, 'Error building browser');
             throw error;
         }
     }
 
-    static async startBrowserWithProxyChain(headless): Promise<BrowserLib> {
-        console.log('STEP 1');
-        const botConfig = await readFileSyncJson(path.join(basePath, 'botConfig.json')) as BotConfig;
-        console.log('STEP 2');
-        // puppeteer.use(StealthPlugin());
-        console.log('STEP 3');
-        const oldProxyUrl = proxyUrl;
+    static async startBrowserWithProxyChain(botConfig: BotConfig, headless): Promise<BrowserLib> {
+        const proxyUrl = `http://${botConfig.proxyUsername}:${botConfig.proxyPassword}@${botConfig.proxyHost}:${botConfig.proxyPort}`;
     
         // Créer une nouvelle URL de proxy sans identifiants dans l'URL
-        console.log(oldProxyUrl);
-        console.log(getbasePath('.env'));
-        const newProxyUrl = await proxyChain.anonymizeProxy(oldProxyUrl);
-        console.log('STEP 4');
+        const newProxyUrl = await proxyChain.anonymizeProxy(proxyUrl);
         process.env.TZ = botConfig.timezone;
-        console.log(__dirname);
-        // puppeteer.use(StealthPlugin());
         const browser = await puppeteer.launch({
             headless: headless,
             args: [
@@ -138,33 +106,27 @@ export class BrowserLib {
                 '--disable-useAutomationExtension',
                 "--disable-features=WebRtcHideLocalIpsWithMdns",
                 "--arc-disable-locale-sync",
-                // `--lang=en-US`, // Définit la langue principale
-                // `--accept-lang=en-US,en`, // En-tête Accept-Language
                 '--disable-blink-features=AutomationControlled', 
                 "--arc-disable-locale-sync",
                 `--window-size=${botConfig.resolution}`,
-                `port=${proxyPort}`,
+                `port=${botConfig.proxyPort}`,
                 `--disable-extensions-except=${path.resolve(__dirname, 'extension/WebRTC_Control')}`,
                 `--load-extension=${path.resolve(__dirname, 'extension/WebRTC_Control')}`,
                 '--disable-blink-features',
             ],
         });
-        console.log('STEP 5');
         return new BrowserLib(browser);
     }
 
     public async fixDetectBot(page: Page): Promise<void> {
         await page.evaluateOnNewDocument(() => {
-            // Supprimer des propriétés détectables
             delete window.dummyFn;
             delete window.__proto__.Runtime;
             delete window.dummyExposedFn;
           
-            // Masquer navigator.webdriver
             Object.defineProperty(navigator, 'webdriver', { get: () => false });
             Object.defineProperty(navigator.connection, 'rtt', { get: () => 50 });
             Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
-            // 1. Supprimer Runtime.enable leak
 
             const cdpHandler = window.__proto__;
             if (cdpHandler && Object.prototype.hasOwnProperty.call(cdpHandler, 'Runtime')) {
@@ -186,23 +148,11 @@ export class BrowserLib {
             });
         });
           
-          await page.setViewport({
+        await page.setViewport({
             width: 1920,
             height: 1080,
             deviceScaleFactor: 1,
-          });
-          
-        //   await page.setUserAgent(
-        //     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36'
-        //   );
-          
-        //   await page.setRequestInterception(true);
-        //   page.on('request', (request) => {
-        //     if (request.url().includes('detections-json')) {
-        //       return request.abort();
-        //     }
-        //     request.continue();
-        //   });
+        });
     }
 
 
@@ -278,5 +228,17 @@ export class BrowserLib {
             i++;
         }
         await this.browser.close();
+        await Utils.sleepRandom(500, 800);
+    }
+
+    async takeScreenshot(page: Page, pathString: string): Promise<void> {
+        try {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, "-"); // For
+            const uuid = randomInt(1, 999999);
+            await page.screenshot({ path: path.join(process.cwd(), `${pathString}/screenshot-${timestamp}-${uuid}.png`)});
+            Logger.info(`Capture d'écran enregistrée sous 'screenshot-${timestamp}-${uuid}.png' !`);
+        } catch (err) {
+            Logger.error("Erreur lors de la capture d'écran :", err);
+        }
     }
 }

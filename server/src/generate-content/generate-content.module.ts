@@ -14,7 +14,8 @@ import { AssistantModule } from './../lib/chat-gpt/assistant/assistant.module';
 // import { getbasePath } from '@chatgpt-api/utils';
 // import { ArticleAssistant } from './article-assistant/article-assistant';
 
-// dotenv.config({path: getbasePath('.env')}); 
+// dotenv.config({path: getbasePath('.env')});
+import { BotModule } from 'src/bots/bot.module'; 
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { AssistantModule } from './../lib/chat-gpt/assistant/assistant.module';
     // FindImageArticleModule,
     // GenerateArticleModule,
     AssistantModule,
+    BotModule
     // SeoArticleOptimizationModule,
     // EmbedHtmlModule,
     // SeoArticleModule,
