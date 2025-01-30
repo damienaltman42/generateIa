@@ -13,6 +13,7 @@ import { Utils } from "../../lib/puppeteer/utils";
 import { constructionArticleType } from "./types/article.types";
 import { WebSearchService } from "../web-search-service/web-search-service.service";
 import { evaluateSearch } from "./prompts/thoughtTree/evaluateSearch";
+import { resumeWebSite } from "./prompts/thoughtTree/resumeWebSite";
 
 const basePath = getbasePath('shared/articles');
 // const testAssisant = "asst_z80PbGerFo0zJ0372Y0MDid6"
@@ -65,13 +66,14 @@ export class GenerateArticle extends AssistantBase<FunctionArgsMap>  {
       // await this.thoughtTree(prompt);
       // await Utils.writeFileSyncJson(path.join(this.constructionArticle.basePath, "articleMetaDatas.json"), this.constructionArticle);
 
-      await this.WebSearchService.makeResearch(this.constructionArticle);
-      await Utils.writeFileSyncJson(path.join(this.constructionArticle.basePath, "articleMetaDatas.json"), this.constructionArticle);
+      // await this.WebSearchService.makeResearch(this.constructionArticle);
+      // await Utils.writeFileSyncJson(path.join(this.constructionArticle.basePath, "articleMetaDatas.json"), this.constructionArticle);
 
-      await this.evaluateSiteRelevance();
-      await Utils.writeFileSyncJson(path.join(this.constructionArticle.basePath, "articleMetaDatas.json"), this.constructionArticle);
+      // await this.evaluateSiteRelevance();
+      // Logger.info("====================================================================================================");
+      // await Utils.writeFileSyncJson(path.join(this.constructionArticle.basePath, "articleMetaDatas.json"), this.constructionArticle);
 
-      await this.scrapWebSite();
+      await this.scrapWebPageAndResume();
       await Utils.writeFileSyncJson(path.join(this.constructionArticle.basePath, "articleMetaDatas.json"), this.constructionArticle);
       return "Success";
     } catch (error) {
@@ -106,37 +108,112 @@ export class GenerateArticle extends AssistantBase<FunctionArgsMap>  {
     Logger.info(`Message thoughtTree step 6 done`);
   }
 
-  public async evaluateSiteRelevance(): Promise<string> {  
+  // public async evaluateSiteRelevance(): Promise<string> {  
+  //   try {
+  //     const openai = new OpenAI();
+
+  //     const trame = this.constructionArticle.trame;
+  //       for (let i = 0; i < trame.trame.sections.length; i++) {
+  //         const section = trame.trame.sections[i];
+  //         const searchKeywords = section.searchKeywords;
+  //         const context = `Titre de la section de l'article : ${section.subTitle} \n\n Contenu de la section de l'article : ${section.content}`;
+  //         const role = evaluateSearch.role.replace("[CONTEXTE_DE_L_ARTICLE]", context).replace("[EXPECTATION_GOOGLE]", searchKeywords.expected);
+  //         for (let j = 0; j < searchKeywords.result.length; j++) {
+  //           if (searchKeywords.result[j].title === "" || searchKeywords.result[j].link === "" || searchKeywords.result[j].description === "") {
+  //             continue;
+  //           }
+  //           const prompt = evaluateSearch.prompt.replace("[TITRE_GOOGLE]", searchKeywords.result[j].title).replace("[DESCRIPTION_GOOGLE]", searchKeywords.result[j].description).replace("[EXPECTATION_GOOGLE]", searchKeywords.expected);
+  //           const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+  //             { role: 'system', content: role },
+  //             { role: 'user', content: prompt },
+  //           ];
+  //           const response = await openai.chat.completions.create({
+  //             model: 'chatgpt-4o-latest',
+  //             max_tokens: 250,
+  //             messages
+  //           });
+  //           const resp = response.choices[0].message.content.trim();
+  //           Logger.info(`Reponse de l'assistant: ${resp}`);
+  //           trame.trame.sections[i].searchKeywords.result[j].relevance = resp.includes("OUI") ? true : false;
+  //           trame.trame.sections[i].searchKeywords.result[j].revelanceJustification = resp;
+  //           sleepFct(2000);
+  //         }
+  //       }
+  //     return "Success";
+  //   } catch (error) {
+  //     Logger.error(error, "Error: evaluateSiteRelevance");
+  //     throw new Error("Error evaluateSiteRelevance: " + error);
+  //   }
+  // }
+
+  public async evaluateSiteRelevance(): Promise<string> {
     try {
       const openai = new OpenAI();
-
+      const MAX_CONCURRENT_JOBS = 20; // Limite des processus simultanés
+      const activeJobs: Set<{ promise: Promise<void>; isCompleted: boolean }> = new Set(); // File d'attente avec métadonnées
       const trame = this.constructionArticle.trame;
-        for (let i = 0; i < trame.trame.sections.length; i++) {
-          const section = trame.trame.sections[i];
-          const searchKeywords = section.searchKeywords;
-          const context = `Titre de la section de l'article : ${section.subTitle} \n\n Contenu de la section de l'article : ${section.content}`;
-          const role = evaluateSearch.role.replace("[CONTEXTE_DE_L_ARTICLE]", context).replace("[EXPECTATION_GOOGLE]", searchKeywords.expected);
-          for (let j = 0; j < searchKeywords.result.length; j++) {
-            if (searchKeywords.result[j].title === "" || searchKeywords.result[j].link === "" || searchKeywords.result[j].description === "") {
-              continue;
-            }
-            const prompt = evaluateSearch.prompt.replace("[TITRE_GOOGLE]", searchKeywords.result[j].title).replace("[DESCRIPTION_GOOGLE]", searchKeywords.result[j].description).replace("[EXPECTATION_GOOGLE]", searchKeywords.expected);
-            const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-              { role: 'system', content: role },
-              { role: 'user', content: prompt },
-            ];
-            const response = await openai.chat.completions.create({
-              model: 'chatgpt-4o-latest',
-              max_tokens: 250,
-              messages
+  
+      for (let i = 0; i < trame.trame.sections.length; i++) {
+        const section = trame.trame.sections[i];
+        const searchKeywords = section.searchKeywords;
+        const context = `Titre de la section de l'article : ${section.subTitle} \n\n Contenu de la section de l'article : ${section.content}`;
+        const role = evaluateSearch.role
+          .replace("[CONTEXTE_DE_L_ARTICLE]", context)
+          .replace("[EXPECTATION_GOOGLE]", searchKeywords.expected);
+  
+        for (let j = 0; j < searchKeywords.result.length; j++) {
+          if (searchKeywords.result[j].title === "" || searchKeywords.result[j].link === "" || searchKeywords.result[j].description === "") {
+            continue;
+          }
+  
+          // Ajouter un job à la file d'attente avec un statut de suivi
+          const job = {
+            promise: (async () => {
+              try {
+                const prompt = evaluateSearch.prompt
+                  .replace("[TITRE_GOOGLE]", searchKeywords.result[j].title)
+                  .replace("[DESCRIPTION_GOOGLE]", searchKeywords.result[j].description)
+                  .replace("[EXPECTATION_GOOGLE]", searchKeywords.expected);
+  
+                const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+                  { role: 'system', content: role },
+                  { role: 'user', content: prompt },
+                ];
+  
+                const response = await openai.chat.completions.create({
+                  model: 'chatgpt-4o-latest',
+                  max_tokens: 250,
+                  messages,
+                });
+  
+                const resp = response.choices[0].message.content.trim();
+                Logger.info(`Reponse de l'assistant: ${resp}`);
+                trame.trame.sections[i].searchKeywords.result[j].relevance = resp.includes("OUI");
+                trame.trame.sections[i].searchKeywords.result[j].revelanceJustification = resp;
+              } catch (error) {
+                Logger.error(`Erreur lors de l'évaluation du résultat "${searchKeywords.result[j].title}": ${error.message}`);
+              }
+            })(),
+            isCompleted: false,
+          };
+  
+          activeJobs.add(job);
+  
+          // Limiter à MAX_CONCURRENT_JOBS en attendant qu'un job se termine
+          if (activeJobs.size >= MAX_CONCURRENT_JOBS) {
+            await Promise.race([...activeJobs].map((j) => j.promise)); // Attend qu'au moins une Promise se termine
+            [...activeJobs].forEach((job) => {
+              job.promise.finally(() => {
+                job.isCompleted = true; // Met à jour le statut une fois terminé
+                activeJobs.delete(job); // Supprime le job terminé
+              });
             });
-            const resp = response.choices[0].message.content.trim();
-            Logger.info(`Reponse de l'assistant: ${resp}`);
-            trame.trame.sections[i].searchKeywords.result[j].relevance = resp.includes("OUI") ? true : false;
-            trame.trame.sections[i].searchKeywords.result[j].revelanceJustification = resp;
-            sleepFct(2000);
           }
         }
+      }
+  
+      // Attendre que toutes les Promises restantes soient terminées
+      await Promise.all([...activeJobs].map((job) => job.promise));
       return "Success";
     } catch (error) {
       Logger.error(error, "Error: evaluateSiteRelevance");
@@ -183,15 +260,40 @@ export class GenerateArticle extends AssistantBase<FunctionArgsMap>  {
     }
   }
 
-  public async scrapWebSite(): Promise<void> {
+  public async scrapWebPageAndResume(): Promise<void> {
+    const openai = new OpenAI();
     const sections = this.constructionArticle.trame.trame.sections;
     for (let i = 0; i < sections.length; i++) {
       const section = sections[i];
       for (let j = 0; j < section.searchKeywords.result.length; j++) {
         const searchResult = section.searchKeywords.result[j];
         if (searchResult.relevance === true) {
-          const content = await this.WebSearchService.scrapWebPageAndResume(searchResult.link, searchResult.title, this.constructionArticle.basePath);
+          const content = await this.WebSearchService.scrapWebSite(searchResult.link, searchResult.title, this.constructionArticle.basePath);
           section.content = content;
+
+
+          const context = `Titre de la section de l'article : ${section.subTitle} \n\n Contenu de la section de l'article : ${section.content}`;
+          const role = resumeWebSite.role
+            .replace("[CONTEXTE_DE_L_ARTICLE]", context)
+            .replace("[EXPECTATION_GOOGLE]", section.searchKeywords.expected);
+            const prompt = resumeWebSite.prompt
+            .replace("[CONTENT]", content)
+            .replace("[EXPECTATION_GOOGLE]", section.searchKeywords.expected);
+         
+          const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+            { role: 'system', content: role },
+            { role: 'user', content: prompt },
+          ];
+
+          const response = await openai.chat.completions.create({
+            model: 'chatgpt-4o-latest',
+            max_tokens: 15000,
+            messages,
+          });
+
+          const resp = response.choices[0].message.content.trim();
+          Logger.info(`Reponse de l'assistant: ${resp}`);
+          return;
         }
       }
     }
